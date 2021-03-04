@@ -2,4 +2,5 @@
 members = [
     "library",
     "proto",
+    "service"
 ]
