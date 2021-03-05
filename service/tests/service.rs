@@ -1,5 +1,5 @@
 use proto::worker_client::WorkerClient;
-use proto::{start_job_result, status_result, JobId, JobSubmission, Result};
+use proto::{start_job_result, status_result, JobId, JobSubmission, StopResult};
 use service::imp;
 
 use futures::FutureExt;
@@ -83,7 +83,7 @@ async fn test_job_submission() -> () {
         .into_inner();
     assert_eq!(
         res,
-        Result {
+        StopResult {
             error: "".to_string()
         }
     );
@@ -95,7 +95,7 @@ async fn test_job_submission() -> () {
         .into_inner();
     assert_eq!(
         res,
-        Result {
+        StopResult {
             error: "no such job id".to_string()
         }
     );

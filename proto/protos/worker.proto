@@ -3,7 +3,7 @@ package worker;
 
 service Worker {
   rpc StartJob(JobSubmission) returns (StartJobResult) {}
-  rpc StopJob(JobId) returns (Result) {}
+  rpc StopJob(JobId) returns (StopResult) {}
   rpc QueryStatus(JobId) returns (StatusResult) {}
   rpc FetchOutput(JobId) returns (stream JobOutput) {}
 }
@@ -24,7 +24,7 @@ message JobId {
   string id = 1;
 }
 
-message Result {
+message StopResult {
   string error = 1;
 }
 

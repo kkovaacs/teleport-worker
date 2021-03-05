@@ -1,7 +1,7 @@
 use proto::worker_server::WorkerServer;
 use proto::{
-    job_output, start_job_result, status_result, JobId, JobOutput, JobSubmission,
-    Result as ApiResult, StartJobResult, StatusResult,
+    job_output, start_job_result, status_result, JobId, JobOutput, JobSubmission, StartJobResult,
+    StatusResult, StopResult,
 };
 
 use futures::Stream;
@@ -49,22 +49,22 @@ impl proto::worker_server::Worker for Worker {
         Ok(Response::new(start_job_result))
     }
 
-    async fn stop_job(&self, request: Request<JobId>) -> WorkerResult<ApiResult> {
+    async fn stop_job(&self, request: Request<JobId>) -> WorkerResult<StopResult> {
         let id = &request.get_ref().id;
         let job_id: jobs::JobId = match id.parse() {
             Ok(id) => id,
             Err(_) => {
-                return Ok(Response::new(ApiResult {
+                return Ok(Response::new(StopResult {
                     error: format!("invalid id: {}", id),
                 }))
             }
         };
 
         let stop_job_result = match self.handler.stop_job(&job_id).await {
-            Ok(()) => ApiResult {
+            Ok(()) => StopResult {
                 error: "".to_string(),
             },
-            Err(e) => ApiResult {
+            Err(e) => StopResult {
                 error: e.to_string(),
             },
         };
