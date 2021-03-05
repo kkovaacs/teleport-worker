@@ -89,7 +89,7 @@ impl Supervisor {
 
         tokio::task::spawn(async move {
             let (exit_status, _, _) = tokio::join!(waiter, stdout_future, stderr_future);
-
+            log.lock().await.stop();
             let _ = exit_status_sender.send(exit_status.unwrap());
         });
         Ok(())
