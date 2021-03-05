@@ -164,7 +164,7 @@ mod tests {
         let (stop_signal, stop_signal_receiver) = oneshot::channel();
         let (exit_status_sender, exit_status_receiver) = oneshot::channel();
         s.monitor(stop_signal_receiver, exit_status_sender).unwrap();
-        stop_signal.send(());
+        stop_signal.send(()).unwrap();
         let exit_status = exit_status_receiver.await.unwrap();
         assert!(!exit_status.success());
     }
@@ -174,7 +174,7 @@ mod tests {
         let log = Arc::new(Mutex::new(Log::new().unwrap()));
         let s = Supervisor::new("/bin/nonexistent", &[], Arc::clone(&log)).unwrap();
         let (_stop_signal, stop_signal_receiver) = oneshot::channel();
-        let (exit_status_sender, exit_status_receiver) = oneshot::channel();
+        let (exit_status_sender, _exit_status_receiver) = oneshot::channel();
         assert!(s.monitor(stop_signal_receiver, exit_status_sender).is_err());
     }
 }
