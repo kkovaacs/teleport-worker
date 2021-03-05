@@ -52,7 +52,7 @@ enum JobState {
 /// store its output.
 pub struct Job {
     state: JobState,
-    supervisor: Supervisor<Log>,
+    supervisor: Supervisor,
     log: Arc<Mutex<Log>>,
 }
 
@@ -66,7 +66,7 @@ impl Job {
     pub fn new(executable: &str, arguments: &[String]) -> Result<(JobId, Job)> {
         let job_id = JobId::new();
         let log = Arc::new(Mutex::new(Log::new()?));
-        let supervisor = Supervisor::new(executable, arguments, Arc::clone(&log))?;
+        let supervisor = Supervisor::new(executable, arguments)?;
         Ok((
             job_id,
             Job {
@@ -82,8 +82,11 @@ impl Job {
             JobState::Created => {
                 let (stop_signal, stop_signal_receiver) = oneshot::channel();
                 let (exit_status_sender, exit_status_receiver) = oneshot::channel();
-                self.supervisor
-                    .monitor(stop_signal_receiver, exit_status_sender)?;
+                self.supervisor.monitor(
+                    Arc::clone(&self.log),
+                    stop_signal_receiver,
+                    exit_status_sender,
+                )?;
                 self.state = JobState::Running {
                     stop_signal,
                     exit_status_receiver,

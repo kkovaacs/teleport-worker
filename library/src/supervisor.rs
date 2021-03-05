@@ -11,10 +11,9 @@ use crate::record::RecordType;
 
 /// [`Supervisor`] represents a running process plus some tasks reading its output and writing
 /// it to a [`Log`].
-pub struct Supervisor<L: LogWriter> {
+pub struct Supervisor {
     executable: String,
     arguments: Vec<String>,
-    log: Arc<Mutex<L>>,
 }
 
 // Arbitrary upper limit for reading at most this number of bytes from stderr and stdout.
@@ -23,13 +22,12 @@ pub struct Supervisor<L: LogWriter> {
 // the largest record.
 pub const READ_CHUNK_SIZE: usize = 1024;
 
-impl<L: LogWriter + Send + 'static> Supervisor<L> {
-    pub fn new(executable: &str, args: &[String], log: Arc<Mutex<L>>) -> io::Result<Self> {
+impl Supervisor {
+    pub fn new(executable: &str, args: &[String]) -> io::Result<Self> {
         let arguments = args.to_vec();
         Ok(Supervisor {
             executable: executable.to_owned(),
             arguments,
-            log,
         })
     }
 
@@ -38,8 +36,9 @@ impl<L: LogWriter + Send + 'static> Supervisor<L> {
     /// Process stdout and stderr is written into the log.
     ///
     /// Returns the exit status of the process.
-    pub fn monitor(
+    pub fn monitor<L: LogWriter + Send + 'static>(
         &self,
+        log: Arc<Mutex<L>>,
         stop_signal_receiver: oneshot::Receiver<()>,
         exit_status_sender: oneshot::Sender<ExitStatus>,
     ) -> io::Result<()> {
@@ -73,16 +72,8 @@ impl<L: LogWriter + Send + 'static> Supervisor<L> {
             Ok(())
         }
 
-        let stdout_future = read_output(
-            Arc::clone(&self.log),
-            RecordType::Stdout,
-            child.stdout.take(),
-        );
-        let stderr_future = read_output(
-            Arc::clone(&self.log),
-            RecordType::Stderr,
-            child.stderr.take(),
-        );
+        let stdout_future = read_output(Arc::clone(&log), RecordType::Stdout, child.stdout.take());
+        let stderr_future = read_output(Arc::clone(&log), RecordType::Stderr, child.stderr.take());
 
         async fn wait_or_kill_child(
             mut child: Child,
@@ -120,13 +111,13 @@ mod tests {
                 "-c".to_string(),
                 "echo stdout; echo stderr 1>&2; exit 1".to_string(),
             ],
-            Arc::clone(&log),
         )
         .unwrap();
 
         let (_stop_signal, stop_signal_receiver) = oneshot::channel();
         let (exit_status_sender, exit_status_receiver) = oneshot::channel();
-        s.monitor(stop_signal_receiver, exit_status_sender).unwrap();
+        s.monitor(Arc::clone(&log), stop_signal_receiver, exit_status_sender)
+            .unwrap();
 
         let exit_status = exit_status_receiver.await.unwrap();
         assert_eq!(exit_status.code(), Some(1));
@@ -159,11 +150,12 @@ mod tests {
     #[tokio::test]
     async fn test_stop_signal() {
         let log = Arc::new(Mutex::new(Log::new().unwrap()));
-        let s = Supervisor::new("/bin/sleep", &["100".to_string()], Arc::clone(&log)).unwrap();
+        let s = Supervisor::new("/bin/sleep", &["100".to_string()]).unwrap();
 
         let (stop_signal, stop_signal_receiver) = oneshot::channel();
         let (exit_status_sender, exit_status_receiver) = oneshot::channel();
-        s.monitor(stop_signal_receiver, exit_status_sender).unwrap();
+        s.monitor(Arc::clone(&log), stop_signal_receiver, exit_status_sender)
+            .unwrap();
         stop_signal.send(()).unwrap();
         let exit_status = exit_status_receiver.await.unwrap();
         assert!(!exit_status.success());
@@ -172,9 +164,11 @@ mod tests {
     #[tokio::test]
     async fn test_invalid_executable() {
         let log = Arc::new(Mutex::new(Log::new().unwrap()));
-        let s = Supervisor::new("/bin/nonexistent", &[], Arc::clone(&log)).unwrap();
+        let s = Supervisor::new("/bin/nonexistent", &[]).unwrap();
         let (_stop_signal, stop_signal_receiver) = oneshot::channel();
         let (exit_status_sender, _exit_status_receiver) = oneshot::channel();
-        assert!(s.monitor(stop_signal_receiver, exit_status_sender).is_err());
+        assert!(s
+            .monitor(Arc::clone(&log), stop_signal_receiver, exit_status_sender)
+            .is_err());
     }
 }
