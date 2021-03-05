@@ -1,8 +1,11 @@
 use proto::worker_client::WorkerClient;
-use proto::{start_job_result, status_result, JobId, JobSubmission, StopResult};
+use proto::{
+    job_output, start_job_result, status_result, JobId, JobOutput, JobSubmission, StopResult,
+};
 use service::imp;
 
 use futures::FutureExt;
+use std::time::Duration;
 use tokio::sync::oneshot;
 use tonic::Request;
 
@@ -18,9 +21,9 @@ async fn test_job_submission() -> () {
             .unwrap();
     });
 
-    tokio::time::sleep(std::time::Duration::from_millis(100)).await;
-
-    let mut client = WorkerClient::connect("http://127.0.0.1:23485")
+    let mut client = tryhard::retry_fn(|| WorkerClient::connect("http://127.0.0.1:23485"))
+        .retries(50)
+        .fixed_backoff(Duration::from_millis(100))
         .await
         .unwrap();
 
@@ -54,8 +57,7 @@ async fn test_job_submission() -> () {
         _ => panic!("expected an id"),
     };
 
-    // check status after waiting some time for the process to exit
-    tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+    // check status
     let res = client
         .query_status(Request::new(JobId { id: job_id.clone() }))
         .await
@@ -73,7 +75,12 @@ async fn test_job_submission() -> () {
         .unwrap()
         .into_inner();
     while let Some(output) = stream.message().await.unwrap() {
-        dbg!(output);
+        assert_eq!(
+            output,
+            JobOutput {
+                output_type: Some(job_output::OutputType::Stdout(b"test\n".to_vec()))
+            }
+        )
     }
 
     let res = client

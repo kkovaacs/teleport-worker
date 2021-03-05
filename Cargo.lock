@@ -673,6 +673,7 @@ dependencies = [
  "tokio",
  "tokio-stream",
  "tonic",
+ "tryhard",
  "uuid",
 ]
 
@@ -930,6 +931,17 @@ name = "try-lock"
 version = "0.2.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "59547bce71d9c38b83d9c0e92b6066c4253371f15005def0c30d9657f50c7642"
+
+[[package]]
+name = "tryhard"
+version = "0.3.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "c77f8fcd2eba0962ef942f754ef3acc9552e405fc0d5bb81082504a4b3bd6a9d"
+dependencies = [
+ "futures",
+ "pin-project",
+ "tokio",
+]
 
 [[package]]
 name = "unicode-segmentation"

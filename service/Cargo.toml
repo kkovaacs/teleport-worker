@@ -14,3 +14,6 @@ tokio = { version = "1.2.0", features = ["full"] }
 tokio-stream = "0.1.3"
 tonic = "0.4.0"
 uuid = { version = "0.8.2", features = ["v4"] }
+
+[dev-dependencies]
+tryhard = "0.3.0"
