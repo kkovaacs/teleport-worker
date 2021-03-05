@@ -24,10 +24,9 @@ pub const READ_CHUNK_SIZE: usize = 1024;
 
 impl Supervisor {
     pub fn new(executable: &str, args: &[String]) -> io::Result<Self> {
-        let arguments = args.to_vec();
         Ok(Supervisor {
             executable: executable.to_owned(),
-            arguments,
+            arguments: args.to_vec(),
         })
     }
 
@@ -81,7 +80,7 @@ impl Supervisor {
         ) -> io::Result<ExitStatus> {
             tokio::select! {
                 exit_status = child.wait() => {exit_status},
-                _ = stop_signal => { child.start_kill().unwrap(); child.wait().await }
+                _ = stop_signal => { child.start_kill()?; child.wait().await }
             }
         }
 
@@ -90,7 +89,9 @@ impl Supervisor {
         tokio::task::spawn(async move {
             let (exit_status, _, _) = tokio::join!(waiter, stdout_future, stderr_future);
             log.lock().await.stop();
-            let _ = exit_status_sender.send(exit_status.unwrap());
+            let _ = exit_status.map(|v| {
+                let _ = exit_status_sender.send(v);
+            });
         });
         Ok(())
     }
