@@ -39,6 +39,8 @@ enum Command {
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
+    env_logger::init();
+
     let options = Options::from_args();
 
     let server_ca_cert = tokio::fs::read(options.server_ca).await?;
