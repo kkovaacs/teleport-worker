@@ -7,7 +7,7 @@ use service::imp;
 use futures::FutureExt;
 use std::time::Duration;
 use tokio::sync::oneshot;
-use tonic::Request;
+use tonic::{transport::Server, Request};
 
 #[tokio::test]
 async fn test_job_submission() -> () {
@@ -15,7 +15,7 @@ async fn test_job_submission() -> () {
 
     let addr = "127.0.0.1:23485".parse().unwrap();
     let service_handle = tokio::spawn(async move {
-        imp::new()
+        imp::new(Server::builder())
             .serve_with_shutdown(addr, rx.map(drop))
             .await
             .unwrap();

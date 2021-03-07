@@ -8,8 +8,10 @@ use futures::Stream;
 use library::RecordType;
 use std::pin::Pin;
 use tokio::sync::mpsc;
-use tonic::transport::server::{Router, Unimplemented};
-use tonic::transport::Server;
+use tonic::transport::{
+    server::{Router, Unimplemented},
+    Certificate, Identity, Server, ServerTlsConfig,
+};
 use tonic::{Request, Response, Status};
 
 pub mod handler;
@@ -145,12 +147,26 @@ impl proto::worker_server::Worker for Worker {
 
 type Imp = Router<WorkerServer<Worker>, Unimplemented>;
 
-pub fn new() -> Imp {
-    let server = Worker {
+pub fn new(mut server: Server) -> Imp {
+    let worker = Worker {
         handler: handler::Handler::default(),
     };
 
-    let service = Server::builder().add_service(WorkerServer::new(server));
+    let service = server.add_service(WorkerServer::new(worker));
 
     service
+}
+
+pub fn new_tls_server() -> Result<Server, tonic::transport::Error> {
+    let cert = include_bytes!("../../../data/pki/server-cert.pem");
+    let key = include_bytes!("../../../data/pki/server-key-pkcs8.pem");
+    let identity = Identity::from_pem(cert, key);
+
+    let user_ca_cert = include_bytes!("../../../data/pki/user-ca-cert.pem");
+    let user_ca_cert = Certificate::from_pem(user_ca_cert);
+
+    let tls_config = ServerTlsConfig::new()
+        .identity(identity)
+        .client_ca_root(user_ca_cert);
+    Server::builder().tls_config(tls_config)
 }
