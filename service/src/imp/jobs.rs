@@ -139,7 +139,7 @@ impl Job {
         }
     }
 
-    fn update_status(&mut self) -> () {
+    fn update_status(&mut self) {
         let new_state = match &mut self.state {
             JobState::Running {
                 stop_signal: _,

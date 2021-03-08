@@ -169,7 +169,7 @@ impl proto::worker_server::Worker for Worker {
 
 fn get_username_or_fail<T>(request: &Request<T>) -> Result<identity::Identity, Status> {
     identity::get_username_from_request(&request)
-        .ok_or(Status::unauthenticated("no peer identity found"))
+        .ok_or_else(|| Status::unauthenticated("no peer identity found"))
 }
 
 type Imp = Router<WorkerServer<Worker>, Unimplemented>;
@@ -179,9 +179,7 @@ pub fn new(mut server: Server) -> Imp {
         handler: handler::Handler::default(),
     };
 
-    let service = server.add_service(WorkerServer::new(worker));
-
-    service
+    server.add_service(WorkerServer::new(worker))
 }
 
 pub fn new_tls_server() -> Result<Server, tonic::transport::Error> {
