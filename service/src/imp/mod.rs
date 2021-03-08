@@ -14,6 +14,8 @@ use tonic::transport::{
 };
 use tonic::{Request, Response, Status};
 
+use self::jobs::JobKey;
+
 pub mod handler;
 mod identity;
 pub mod jobs;
@@ -33,10 +35,17 @@ pub struct Worker {
 #[tonic::async_trait]
 impl proto::worker_server::Worker for Worker {
     async fn start_job(&self, request: Request<JobSubmission>) -> WorkerResult<StartJobResult> {
+        // ideally this could be done as a middleware, but I haven't found a way to implement it with tonic...
+        let username = get_username_or_fail(&request)?;
+
         let job_submission = request.get_ref();
         let start_job_result = match self
             .handler
-            .start_job(&job_submission.executable, &job_submission.arguments)
+            .start_job(
+                username,
+                &job_submission.executable,
+                &job_submission.arguments,
+            )
             .await
         {
             Ok(job_id) => StartJobResult {
@@ -53,6 +62,9 @@ impl proto::worker_server::Worker for Worker {
     }
 
     async fn stop_job(&self, request: Request<JobId>) -> WorkerResult<StopResult> {
+        // ideally this could be done as a middleware, but I haven't found a way to implement it with tonic...
+        let username = get_username_or_fail(&request)?;
+
         let id = &request.get_ref().id;
         let job_id: jobs::JobId = match id.parse() {
             Ok(id) => id,
@@ -63,7 +75,8 @@ impl proto::worker_server::Worker for Worker {
             }
         };
 
-        let stop_job_result = match self.handler.stop_job(&job_id).await {
+        let job_key = JobKey(username, job_id);
+        let stop_job_result = match self.handler.stop_job(&job_key).await {
             Ok(()) => StopResult {
                 error: "".to_string(),
             },
@@ -76,6 +89,9 @@ impl proto::worker_server::Worker for Worker {
     }
 
     async fn query_status(&self, request: Request<JobId>) -> WorkerResult<StatusResult> {
+        // ideally this could be done as a middleware, but I haven't found a way to implement it with tonic...
+        let username = get_username_or_fail(&request)?;
+
         let id = &request.get_ref().id;
         let job_id: jobs::JobId = match id.parse() {
             Ok(id) => id,
@@ -86,7 +102,8 @@ impl proto::worker_server::Worker for Worker {
             }
         };
 
-        let result = match self.handler.query_status(&job_id).await {
+        let job_key = JobKey(username, job_id);
+        let result = match self.handler.query_status(&job_key).await {
             Ok(status) => match status {
                 jobs::Status::Running => status_result::Result::Running(status_result::Running {}),
                 jobs::Status::Exited { exit_status } => {
@@ -104,6 +121,9 @@ impl proto::worker_server::Worker for Worker {
     type FetchOutputStream = Pin<Box<dyn Stream<Item = Result<JobOutput, Status>> + Send + Sync>>;
 
     async fn fetch_output(&self, request: Request<JobId>) -> WorkerResult<Self::FetchOutputStream> {
+        // ideally this could be done as a middleware, but I haven't found a way to implement it with tonic...
+        let username = get_username_or_fail(&request)?;
+
         // use a bounded channel here to decouple producer/consumer, the capacity should be
         // small enough so that we do not store too much output in memory
         let (tx, rx) = mpsc::channel(10);
@@ -118,7 +138,8 @@ impl proto::worker_server::Worker for Worker {
             }
         };
 
-        match self.handler.fetch_output(&job_id).await {
+        let job_key = JobKey(username, job_id);
+        match self.handler.fetch_output(&job_key).await {
             Ok(mut record_receiver) => {
                 tokio::spawn(async move {
                     // convert log records to JobOutput messages
@@ -144,6 +165,11 @@ impl proto::worker_server::Worker for Worker {
             tokio_stream::wrappers::ReceiverStream::new(rx),
         )))
     }
+}
+
+fn get_username_or_fail<T>(request: &Request<T>) -> Result<identity::Identity, Status> {
+    identity::get_username_from_request(&request)
+        .ok_or(Status::unauthenticated("no peer identity found"))
 }
 
 type Imp = Router<WorkerServer<Worker>, Unimplemented>;
