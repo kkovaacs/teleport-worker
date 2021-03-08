@@ -13,7 +13,3 @@ service = { path = "../service" }
 structopt = "0.3.21"
 tokio = { version = "1.2.0", features = ["full"] }
 tonic = { version = "0.4.0", features = ["tls"] }
-
-[dev-dependencies]
-futures = "0.3.13"
-tryhard = "0.3.0"
