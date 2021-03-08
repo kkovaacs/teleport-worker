@@ -40,20 +40,49 @@ To submit a new job the `start` subcommand can be used, which then prints the ID
 
 ```shell
 $ cargo run --bin client -- --cert data/pki/user1-cert.pem --key data/pki/user1-key-pkcs8.pem --ca-certificate data/pki/server-ca-cert.pem start /bin/ls /
-7c51699e-b9bc-439a-b847-0063626b6ea4
+b3a318df-52ed-46bf-ba9f-028864be6002
 ```
 
 This ID can then be used to refer to the job in subsequent invocations. For example, to query the status of the job:
 
 ```shell
-$ cargo run --bin client -- --cert data/pki/user1-cert.pem --key data/pki/user1-key-pkcs8.pem --ca-certificate data/pki/server-ca-cert.pem query-status 7c51699e-b9bc-439a-b847-0063626b6ea4
+$ cargo run --bin client -- --cert data/pki/user1-cert.pem --key data/pki/user1-key-pkcs8.pem --ca-certificate data/pki/server-ca-cert.pem query-status b3a318df-52ed-46bf-ba9f-028864be6002
+Exited with status 0
+```
+
+To fetch the output (both stdout and stderr) of a job:
+
+```shell
+$ cargo run --bin client -- --cert data/pki/user1-cert.pem --key data/pki/user1-key-pkcs8.pem --ca-certificate data/pki/server-ca-cert.pem fetch-output b3a318df-52ed-46bf-ba9f-028864be6002
+bin
+boot
+data
+dev
+etc
+home
+lib
+lib64
+media
+mnt
+opt
+proc
+root
+run
+sbin
+snap
+srv
+sys
+tmp
+usr
+var
 ```
 
 To remove a job from the service:
 
 ```shell
-$ cargo run --bin client -- --cert data/pki/user1-cert.pem --key data/pki/user1-key-pkcs8.pem --ca-certificate data/pki/server-ca-cert.pem stop 7c51699e-b9bc-439a-b847-0063626b6ea4
+$ cargo run --bin client -- --cert data/pki/user1-cert.pem --key data/pki/user1-key-pkcs8.pem --ca-certificate data/pki/server-ca-cert.pem stop b3a318df-52ed-46bf-ba9f-028864be6002
 ```
+
 
 ## License
 
