@@ -15,6 +15,7 @@ use tonic::transport::{
 use tonic::{Request, Response, Status};
 
 pub mod handler;
+mod identity;
 pub mod jobs;
 
 type WorkerResult<T> = Result<Response<T>, Status>;
