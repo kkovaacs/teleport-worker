@@ -1,20 +1,19 @@
-use std::ffi::OsStr;
 use std::io;
 use std::process::{ExitStatus, Stdio};
 use std::sync::Arc;
 
 use tokio::io::{AsyncRead, AsyncReadExt};
-use tokio::process::Command;
-use tokio::sync::Mutex;
+use tokio::process::{Child, Command};
+use tokio::sync::{oneshot, Mutex};
 
 use crate::log::LogWriter;
 use crate::record::RecordType;
 
 /// [`Supervisor`] represents a running process plus some tasks reading its output and writing
 /// it to a [`Log`].
-pub struct Supervisor<L: LogWriter> {
-    command: Command,
-    log: Arc<Mutex<L>>,
+pub struct Supervisor {
+    executable: String,
+    arguments: Vec<String>,
 }
 
 // Arbitrary upper limit for reading at most this number of bytes from stderr and stdout.
@@ -23,21 +22,12 @@ pub struct Supervisor<L: LogWriter> {
 // the largest record.
 pub const READ_CHUNK_SIZE: usize = 1024;
 
-impl<L: LogWriter> Supervisor<L> {
-    pub fn new<S, I, A>(executable: S, args: I, log: Arc<Mutex<L>>) -> io::Result<Self>
-    where
-        S: AsRef<OsStr>,
-        I: IntoIterator<Item = A>,
-        A: AsRef<OsStr>,
-    {
-        let mut command = Command::new(executable);
-        command
-            .args(args)
-            .stdin(Stdio::null())
-            .stdout(Stdio::piped())
-            .stderr(Stdio::piped())
-            .kill_on_drop(true);
-        Ok(Supervisor { command, log })
+impl Supervisor {
+    pub fn new(executable: &str, args: &[String]) -> io::Result<Self> {
+        Ok(Supervisor {
+            executable: executable.to_owned(),
+            arguments: args.to_vec(),
+        })
     }
 
     /// Start the subprocess and wait for it to exit.
@@ -45,8 +35,20 @@ impl<L: LogWriter> Supervisor<L> {
     /// Process stdout and stderr is written into the log.
     ///
     /// Returns the exit status of the process.
-    pub async fn monitor(&mut self) -> io::Result<ExitStatus> {
-        let mut child = self.command.spawn()?;
+    pub fn monitor<L: LogWriter + Send + 'static>(
+        &self,
+        log: Arc<Mutex<L>>,
+        stop_signal_receiver: oneshot::Receiver<()>,
+        exit_status_sender: oneshot::Sender<ExitStatus>,
+    ) -> io::Result<()> {
+        let mut command = Command::new(self.executable.clone());
+        command
+            .args(self.arguments.clone())
+            .stdin(Stdio::null())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
+            .kill_on_drop(true);
+        let mut child = command.spawn()?;
 
         async fn read_output<A: AsyncRead + Unpin, L: LogWriter>(
             log: Arc<Mutex<L>>,
@@ -69,20 +71,29 @@ impl<L: LogWriter> Supervisor<L> {
             Ok(())
         }
 
-        let stdout_future = read_output(
-            Arc::clone(&self.log),
-            RecordType::Stdout,
-            child.stdout.take(),
-        );
-        let stderr_future = read_output(
-            Arc::clone(&self.log),
-            RecordType::Stderr,
-            child.stderr.take(),
-        );
+        let stdout_future = read_output(Arc::clone(&log), RecordType::Stdout, child.stdout.take());
+        let stderr_future = read_output(Arc::clone(&log), RecordType::Stderr, child.stderr.take());
 
-        let (exit_status, _, _) = tokio::join!(child.wait(), stdout_future, stderr_future);
+        async fn wait_or_kill_child(
+            mut child: Child,
+            stop_signal: oneshot::Receiver<()>,
+        ) -> io::Result<ExitStatus> {
+            tokio::select! {
+                exit_status = child.wait() => {exit_status},
+                _ = stop_signal => { child.start_kill()?; child.wait().await }
+            }
+        }
 
-        exit_status
+        let waiter = wait_or_kill_child(child, stop_signal_receiver);
+
+        tokio::task::spawn(async move {
+            let (exit_status, _, _) = tokio::join!(waiter, stdout_future, stderr_future);
+            log.lock().await.stop();
+            let _ = exit_status.map(|v| {
+                let _ = exit_status_sender.send(v);
+            });
+        });
+        Ok(())
     }
 }
 
@@ -95,13 +106,21 @@ mod tests {
     #[tokio::test]
     async fn test_supervisor_output() {
         let log = Arc::new(Mutex::new(Log::new().unwrap()));
-        let mut s = Supervisor::new(
+        let s = Supervisor::new(
             "/bin/sh",
-            &["-c", "echo stdout; echo stderr 1>&2; exit 1"],
-            Arc::clone(&log),
+            &[
+                "-c".to_string(),
+                "echo stdout; echo stderr 1>&2; exit 1".to_string(),
+            ],
         )
         .unwrap();
-        let exit_status = s.monitor().await.unwrap();
+
+        let (_stop_signal, stop_signal_receiver) = oneshot::channel();
+        let (exit_status_sender, exit_status_receiver) = oneshot::channel();
+        s.monitor(Arc::clone(&log), stop_signal_receiver, exit_status_sender)
+            .unwrap();
+
+        let exit_status = exit_status_receiver.await.unwrap();
         assert_eq!(exit_status.code(), Some(1));
         drop(s);
 
@@ -127,5 +146,30 @@ mod tests {
                 data: b"stderr\n".to_vec()
             }
         );
+    }
+
+    #[tokio::test]
+    async fn test_stop_signal() {
+        let log = Arc::new(Mutex::new(Log::new().unwrap()));
+        let s = Supervisor::new("/bin/sleep", &["100".to_string()]).unwrap();
+
+        let (stop_signal, stop_signal_receiver) = oneshot::channel();
+        let (exit_status_sender, exit_status_receiver) = oneshot::channel();
+        s.monitor(Arc::clone(&log), stop_signal_receiver, exit_status_sender)
+            .unwrap();
+        stop_signal.send(()).unwrap();
+        let exit_status = exit_status_receiver.await.unwrap();
+        assert!(!exit_status.success());
+    }
+
+    #[tokio::test]
+    async fn test_invalid_executable() {
+        let log = Arc::new(Mutex::new(Log::new().unwrap()));
+        let s = Supervisor::new("/bin/nonexistent", &[]).unwrap();
+        let (_stop_signal, stop_signal_receiver) = oneshot::channel();
+        let (exit_status_sender, _exit_status_receiver) = oneshot::channel();
+        assert!(s
+            .monitor(Arc::clone(&log), stop_signal_receiver, exit_status_sender)
+            .is_err());
     }
 }

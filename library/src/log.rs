@@ -11,6 +11,7 @@ use crate::record::{Record, RecordType};
 
 pub trait LogWriter {
     fn write_record(&mut self, record_type: RecordType, data: &[u8]) -> io::Result<()>;
+    fn stop(&self);
 }
 
 /// [`Log`] represents a file on the filesystem containing structured records of process output.
@@ -62,11 +63,16 @@ impl LogWriter for Log {
         self.file.write_all(&header)?;
         self.file.write_all(data)
     }
+
+    /// Signal readers that no more records will be written
+    fn stop(&self) {
+        self.running.store(false, Ordering::Release);
+    }
 }
 
 impl Drop for Log {
     fn drop(&mut self) {
-        self.running.store(false, Ordering::Release)
+        self.stop()
     }
 }
 

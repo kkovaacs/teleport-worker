@@ -8,4 +8,5 @@ mod supervisor;
 /// log reader that can be used to read process output in a structured way.
 ///
 pub use log::Log;
+pub use record::{Record, RecordType};
 pub use supervisor::Supervisor;
