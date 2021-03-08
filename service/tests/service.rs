@@ -82,17 +82,6 @@ async fn test_job_submission() -> () {
         _ => panic!("expected an id"),
     };
 
-    // check status
-    let res = client
-        .query_status(Request::new(JobId { id: job_id.clone() }))
-        .await
-        .unwrap()
-        .into_inner();
-    assert_eq!(
-        res.result.unwrap(),
-        status_result::Result::Exited(status_result::Exited { exit_status: 0 })
-    );
-
     // check output
     let mut stream = client
         .fetch_output(Request::new(JobId { id: job_id.clone() }))
@@ -107,6 +96,17 @@ async fn test_job_submission() -> () {
             }
         )
     }
+
+    // check status
+    let res = client
+        .query_status(Request::new(JobId { id: job_id.clone() }))
+        .await
+        .unwrap()
+        .into_inner();
+    assert_eq!(
+        res.result.unwrap(),
+        status_result::Result::Exited(status_result::Exited { exit_status: 0 })
+    );
 
     let res = client
         .stop_job(Request::new(JobId { id: job_id.clone() }))
@@ -190,18 +190,7 @@ async fn test_authorization() -> () {
         _ => panic!("expected an id"),
     };
 
-    // check status
-    let res = user1_client
-        .query_status(Request::new(JobId { id: job_id.clone() }))
-        .await
-        .unwrap()
-        .into_inner();
-    assert_eq!(
-        res.result.unwrap(),
-        status_result::Result::Exited(status_result::Exited { exit_status: 0 })
-    );
-
-    // check with another user
+    // stop with another user
     let user2_cert = include_bytes!("../../data/pki/user2-cert.pem");
     let user2_key = include_bytes!("../../data/pki/user2-key-pkcs8.pem");
 
@@ -229,13 +218,15 @@ async fn test_authorization() -> () {
 
     // check status
     let res = user2_client
-        .query_status(Request::new(JobId { id: job_id.clone() }))
+        .stop_job(Request::new(JobId { id: job_id.clone() }))
         .await
         .unwrap()
         .into_inner();
     assert_eq!(
-        res.result.unwrap(),
-        status_result::Result::Error("no such job id".to_owned())
+        res,
+        StopResult {
+            error: "no such job id".to_string()
+        }
     );
 
     drop(tx);
