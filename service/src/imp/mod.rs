@@ -1,7 +1,7 @@
 use proto::worker_server::WorkerServer;
 use proto::{
-    job_output, start_job_result, status_result, JobId, JobOutput, JobSubmission, StartJobResult,
-    StatusResult, StopResult,
+    job_output, start_job_result, status_result, stop_result::StopError, JobId, JobOutput,
+    JobSubmission, StartJobResult, StatusResult, StopResult,
 };
 
 use futures::Stream;
@@ -70,18 +70,20 @@ impl proto::worker_server::Worker for Worker {
             Ok(id) => id,
             Err(_) => {
                 return Ok(Response::new(StopResult {
-                    error: format!("invalid id: {}", id),
+                    error: Some(StopError {
+                        message: format!("invalid id: {}", id),
+                    }),
                 }))
             }
         };
 
         let job_key = JobKey(username, job_id);
         let stop_job_result = match self.handler.stop_job(&job_key).await {
-            Ok(()) => StopResult {
-                error: "".to_string(),
-            },
+            Ok(()) => StopResult { error: None },
             Err(e) => StopResult {
-                error: e.to_string(),
+                error: Some(StopError {
+                    message: e.to_string(),
+                }),
             },
         };
 

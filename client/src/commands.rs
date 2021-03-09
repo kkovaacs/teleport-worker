@@ -41,10 +41,9 @@ pub(crate) async fn stop(channel: &mut Channel, job_id: String) -> Result<Option
     let mut client = WorkerClient::new(channel);
     let request = Request::new(JobId { id: job_id });
     let response = client.stop_job(request).await?.into_inner();
-    if response.error.is_empty() {
-        Ok(None)
-    } else {
-        Err(anyhow::anyhow!("Stopping job failed: {}", response.error))
+    match response.error {
+        Some(error) => Err(anyhow::anyhow!("Stopping job failed: {}", error.message)),
+        None => Ok(None),
     }
 }
 

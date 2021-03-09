@@ -1,6 +1,7 @@
 use proto::worker_client::WorkerClient;
 use proto::{
-    job_output, start_job_result, status_result, JobId, JobOutput, JobSubmission, StopResult,
+    job_output, start_job_result, status_result, stop_result::StopError, JobId, JobOutput,
+    JobSubmission, StopResult,
 };
 use service::imp;
 
@@ -113,12 +114,7 @@ async fn test_job_submission() -> () {
         .await
         .unwrap()
         .into_inner();
-    assert_eq!(
-        res,
-        StopResult {
-            error: "".to_string()
-        }
-    );
+    assert_eq!(res, StopResult { error: None });
 
     let res = client
         .stop_job(Request::new(JobId { id: job_id.clone() }))
@@ -128,7 +124,9 @@ async fn test_job_submission() -> () {
     assert_eq!(
         res,
         StopResult {
-            error: "no such job id".to_string()
+            error: Some(StopError {
+                message: "no such job id".to_string(),
+            })
         }
     );
 
@@ -225,7 +223,9 @@ async fn test_authorization() -> () {
     assert_eq!(
         res,
         StopResult {
-            error: "no such job id".to_string()
+            error: Some(StopError {
+                message: "no such job id".to_string()
+            }),
         }
     );
 
