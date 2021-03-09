@@ -23,13 +23,11 @@ pub fn get_username_from_request<T>(request: &Request<T>) -> Option<Identity> {
 
 fn get_username_from_certificate(der_encoded_certificate: &[u8]) -> Option<Identity> {
     if let Ok(cert) = X509::from_der(der_encoded_certificate) {
-        match &cert.subject_alt_names() {
-            Some(san) => san
-                .iter()
+        cert.subject_alt_names().and_then(|san| {
+            san.iter()
                 .find_map(|name| name.email())
-                .map(|s| Identity(s.to_owned())),
-            None => None,
-        }
+                .map(|s| Identity(s.to_owned()))
+        })
     } else {
         None
     }
