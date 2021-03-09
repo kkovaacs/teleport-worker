@@ -7,21 +7,24 @@ use anyhow::Result;
 use tokio::io::AsyncWriteExt;
 use tonic::{transport::Channel, Request};
 
+/// Starts a job
+///
+/// Returns an optional string that represents the result and should be printed to stdout.
 pub(crate) async fn start(
     channel: &mut Channel,
-    executable: &str,
-    arguments: &[String],
-) -> Result<String> {
+    executable: String,
+    arguments: Vec<String>,
+) -> Result<Option<String>> {
     let mut client = WorkerClient::new(channel);
     let request = Request::new(JobSubmission {
-        executable: executable.to_string(),
-        arguments: arguments.to_vec(),
+        executable: executable,
+        arguments: arguments,
     });
     let response = client.start_job(request).await?.into_inner();
     match response {
         StartJobResult {
             result: Some(start_job_result::Result::Id(job_id)),
-        } => Ok(job_id),
+        } => Ok(Some(job_id)),
         StartJobResult {
             result: Some(start_job_result::Result::Error(error)),
         } => Err(anyhow::anyhow!("Job submission failed: {}", error)),
@@ -31,31 +34,37 @@ pub(crate) async fn start(
     }
 }
 
-pub(crate) async fn stop(channel: &mut Channel, job_id: String) -> Result<String> {
+/// Stop job
+///
+/// Returns an optional string that represents the result and should be printed to stdout.
+pub(crate) async fn stop(channel: &mut Channel, job_id: String) -> Result<Option<String>> {
     let mut client = WorkerClient::new(channel);
     let request = Request::new(JobId { id: job_id });
     let response = client.stop_job(request).await?.into_inner();
     if response.error.is_empty() {
-        Ok("".to_owned())
+        Ok(None)
     } else {
         Err(anyhow::anyhow!("Stopping job failed: {}", response.error))
     }
 }
 
-pub(crate) async fn query_status(channel: &mut Channel, job_id: String) -> Result<String> {
+/// Query job status
+///
+/// Returns an optional string that represents the result and should be printed to stdout.
+pub(crate) async fn query_status(channel: &mut Channel, job_id: String) -> Result<Option<String>> {
     let mut client = WorkerClient::new(channel);
     let request = Request::new(JobId { id: job_id });
     let response = client.query_status(request).await?.into_inner();
     match response {
         StatusResult {
             result: Some(status_result::Result::Running(_)),
-        } => Ok("Running".to_owned()),
+        } => Ok(Some("Running".to_owned())),
         StatusResult {
             result: Some(status_result::Result::Exited(status_result::Exited { exit_status })),
-        } => Ok(format!("Exited with status {}", exit_status)),
+        } => Ok(Some(format!("Exited with status {}", exit_status))),
         StatusResult {
             result: Some(status_result::Result::Stopped(_)),
-        } => Ok("Stopped".to_owned()),
+        } => Ok(Some("Stopped".to_owned())),
         StatusResult {
             result: Some(status_result::Result::Error(error)),
         } => Err(anyhow::anyhow!("Querying status failed: {}", error)),
@@ -65,6 +74,9 @@ pub(crate) async fn query_status(channel: &mut Channel, job_id: String) -> Resul
     }
 }
 
+/// Fetch and print job output to stdout and stderr
+///
+/// Returns an optional string that represents the result and should be printed to stdout.
 pub(crate) async fn fetch_output<
     O: tokio::io::AsyncWrite + Unpin,
     E: tokio::io::AsyncWrite + Unpin,
@@ -73,7 +85,7 @@ pub(crate) async fn fetch_output<
     job_id: String,
     mut stdout: O,
     mut stderr: E,
-) -> Result<String> {
+) -> Result<Option<String>> {
     let mut client = WorkerClient::new(channel);
     let request = Request::new(JobId { id: job_id });
     let mut stream = client.fetch_output(request).await?.into_inner();
@@ -86,5 +98,5 @@ pub(crate) async fn fetch_output<
             OutputType::Stderr(data) => stderr.write_all(&data).await?,
         };
     }
-    Ok("".to_owned())
+    Ok(None)
 }

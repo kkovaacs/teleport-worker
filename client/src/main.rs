@@ -60,7 +60,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .connect()
         .await?;
 
-    let result = match &options.cmd {
+    let result = match options.cmd {
         Command::Start {
             executable,
             arguments,
@@ -75,11 +75,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     };
 
     match result {
-        Ok(output) => {
-            if !output.is_empty() {
-                println!("{}", output)
-            }
-        }
+        Ok(Some(output)) => println!("{}", output),
+        Ok(None) => {}
         Err(error) => eprintln!("{}", error),
     }
 
