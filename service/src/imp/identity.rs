@@ -1,7 +1,8 @@
 use openssl::x509::X509;
 use tonic::Request;
 
-pub type Identity = String;
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+pub struct Identity(String);
 
 pub fn get_username_from_request<T>(request: &Request<T>) -> Option<Identity> {
     // The situation with tonic is less than ideal:
@@ -26,7 +27,7 @@ fn get_username_from_certificate(der_encoded_certificate: &[u8]) -> Option<Ident
             Some(san) => san
                 .iter()
                 .find_map(|name| name.email())
-                .map(|s| s.to_owned()),
+                .map(|s| Identity(s.to_owned())),
             None => None,
         }
     } else {
@@ -39,5 +40,5 @@ fn test_get_username_from_certificate() {
     let user1_cert = include_bytes!("../../../data/pki/user1-cert.pem");
     let x509 = X509::from_pem(user1_cert).unwrap();
     let username = get_username_from_certificate(&x509.to_der().unwrap());
-    assert_eq!(username, Some("user1@company.com".to_owned()));
+    assert_eq!(username, Some(Identity("user1@company.com".to_owned())));
 }
