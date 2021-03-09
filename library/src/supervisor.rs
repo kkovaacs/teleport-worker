@@ -25,10 +25,10 @@ pub struct Supervisor {
 pub const READ_CHUNK_SIZE: usize = 1024;
 
 impl Supervisor {
-    pub fn new(executable: &str, args: &[String]) -> io::Result<Self> {
+    pub fn new(executable: String, args: Vec<String>) -> io::Result<Self> {
         Ok(Supervisor {
-            executable: executable.to_owned(),
-            arguments: args.to_vec(),
+            executable: executable,
+            arguments: args,
         })
     }
 
@@ -118,8 +118,8 @@ mod tests {
     async fn test_supervisor_output() {
         let log = Arc::new(Mutex::new(Log::new().unwrap()));
         let s = Supervisor::new(
-            "/bin/sh",
-            &[
+            "/bin/sh".to_owned(),
+            vec![
                 "-c".to_string(),
                 "echo stdout; echo stderr 1>&2; exit 1".to_string(),
             ],
@@ -167,7 +167,7 @@ mod tests {
     #[tokio::test]
     async fn test_stop_signal() {
         let log = Arc::new(Mutex::new(Log::new().unwrap()));
-        let s = Supervisor::new("/bin/sleep", &["100".to_string()]).unwrap();
+        let s = Supervisor::new("/bin/sleep".to_owned(), vec!["100".to_string()]).unwrap();
 
         let (stop_signal, stop_signal_receiver) = oneshot::channel();
         let (exit_status_sender, exit_status_receiver) = oneshot::channel();
@@ -186,7 +186,7 @@ mod tests {
     #[tokio::test]
     async fn test_invalid_executable() {
         let log = Arc::new(Mutex::new(Log::new().unwrap()));
-        let s = Supervisor::new("/bin/nonexistent", &[]).unwrap();
+        let s = Supervisor::new("/bin/nonexistent".to_owned(), vec![]).unwrap();
         let (_stop_signal, stop_signal_receiver) = oneshot::channel();
         let (exit_status_sender, _exit_status_receiver) = oneshot::channel();
         assert!(s

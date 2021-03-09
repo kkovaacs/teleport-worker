@@ -68,7 +68,7 @@ pub enum Status {
 }
 
 impl Job {
-    pub fn new(executable: &str, arguments: &[String]) -> Result<(JobId, Job)> {
+    pub fn new(executable: String, arguments: Vec<String>) -> Result<(JobId, Job)> {
         let job_id = JobId::new();
         let log = Arc::new(Mutex::new(Log::new()?));
         let supervisor = Supervisor::new(executable, arguments)?;
@@ -82,7 +82,10 @@ impl Job {
         ))
     }
 
-    pub async fn start(&mut self) -> Result<()> {
+    pub async fn start(
+        &mut self,
+        resource_controller: Arc<dyn library::ResourceController>,
+    ) -> Result<()> {
         match self.state {
             JobState::Created => {
                 let (stop_signal, stop_signal_receiver) = oneshot::channel();
@@ -91,7 +94,7 @@ impl Job {
                     Arc::clone(&self.log),
                     stop_signal_receiver,
                     exit_status_sender,
-                    Arc::new(library::NoOpController {}),
+                    resource_controller,
                 )?;
                 self.state = JobState::Running {
                     stop_signal,

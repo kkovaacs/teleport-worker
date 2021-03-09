@@ -1,9 +1,10 @@
 use anyhow::Result;
+use std::sync::Arc;
 use tokio::sync::{mpsc, Mutex};
 
 use crate::imp::identity::Identity;
 use crate::imp::jobs::{Job, JobId, JobKey, Jobs, Status};
-use library::Record;
+use library::{Record, ResourceController};
 
 /// Implements the actual operations and stores service state (jobs)
 ///
@@ -17,11 +18,12 @@ impl Handler {
     pub async fn start_job(
         &self,
         owner: Identity,
-        executable: &str,
-        arguments: &[String],
+        executable: String,
+        arguments: Vec<String>,
+        resource_controller: Arc<dyn ResourceController>,
     ) -> Result<JobId> {
         let (job_id, mut job) = Job::new(executable, arguments)?;
-        job.start().await?;
+        job.start(resource_controller).await?;
         self.jobs.lock().await.insert(JobKey(owner, job_id), job);
         Ok(job_id)
     }
