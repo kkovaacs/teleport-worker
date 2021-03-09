@@ -4,17 +4,19 @@ use proto::{
     JobSubmission, StartJobResult, StatusResult, StopResult,
 };
 
+use anyhow::Result;
 use futures::Stream;
 use library::RecordType;
 use std::pin::Pin;
 use tokio::sync::mpsc;
 use tonic::transport::{
     server::{Router, Unimplemented},
-    Certificate, Identity, Server, ServerTlsConfig,
+    Server, ServerTlsConfig,
 };
 use tonic::{Request, Response, Status};
 
 use self::jobs::JobKey;
+use std::io::Cursor;
 
 pub mod handler;
 mod identity;
@@ -184,16 +186,42 @@ pub fn new(mut server: Server) -> Imp {
     server.add_service(WorkerServer::new(worker))
 }
 
-pub fn new_tls_server() -> Result<Server, tonic::transport::Error> {
+pub fn new_tls_server() -> Result<Server> {
     let cert = include_bytes!("../../../data/pki/server-cert.pem");
+    let certs = rustls::internal::pemfile::certs(&mut Cursor::new(cert))
+        .map_err(|_| anyhow::anyhow!("failed to parse server certificates from PEM file"))?;
     let key = include_bytes!("../../../data/pki/server-key-pkcs8.pem");
-    let identity = Identity::from_pem(cert, key);
+    let mut keys = rustls::internal::pemfile::pkcs8_private_keys(&mut Cursor::new(key))
+        .map_err(|_| anyhow::anyhow!("failed to parse server private key from PEM file"))?;
 
+    if certs.len() < 1 || keys.len() != 1 {
+        return Err(anyhow::anyhow!(
+            "invalid certificate or key PEM file: invalid number of entries"
+        ));
+    }
+    let key = keys.remove(0);
     let user_ca_cert = include_bytes!("../../../data/pki/user-ca-cert.pem");
-    let user_ca_cert = Certificate::from_pem(user_ca_cert);
+    let mut user_root_cert_store = rustls::RootCertStore::empty();
+    user_root_cert_store
+        .add_pem_file(&mut Cursor::new(user_ca_cert))
+        .map_err(|_| anyhow::anyhow!("failed to parse user CA certificates from PEM file"))?;
 
-    let tls_config = ServerTlsConfig::new()
-        .identity(identity)
-        .client_ca_root(user_ca_cert);
-    Server::builder().tls_config(tls_config)
+    // This is somewhat ugly: tonic only provides two possibilities. Either we only set the
+    // identity and the client root CA, or use a completely custom rustls server configuration --
+    // this latter option includes setting up ALPN protocol list by hand...
+    let client_cert_verifier = rustls::AllowAnyAuthenticatedClient::new(user_root_cert_store);
+    let mut rustls_config = rustls::ServerConfig::with_ciphersuites(
+        client_cert_verifier,
+        &[&rustls::ciphersuite::TLS13_CHACHA20_POLY1305_SHA256],
+    );
+    rustls_config.versions = vec![rustls::ProtocolVersion::TLSv1_3];
+    rustls_config.set_single_cert(certs, key)?;
+    const ALPN_H2: &[u8] = b"h2";
+    rustls_config.set_protocols(&[Vec::from(ALPN_H2)]);
+
+    let mut tls_config = ServerTlsConfig::new();
+    tls_config.rustls_server_config(rustls_config);
+
+    let server = Server::builder().tls_config(tls_config)?;
+    Ok(server)
 }

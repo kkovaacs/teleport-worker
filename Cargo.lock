@@ -897,6 +897,7 @@ dependencies = [
  "library",
  "openssl",
  "proto",
+ "rustls",
  "tokio",
  "tokio-stream",
  "tonic",
