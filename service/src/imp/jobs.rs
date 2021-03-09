@@ -91,6 +91,7 @@ impl Job {
                     Arc::clone(&self.log),
                     stop_signal_receiver,
                     exit_status_sender,
+                    Box::new(library::NoOpController {}),
                 )?;
                 self.state = JobState::Running {
                     stop_signal,

@@ -1,4 +1,5 @@
 use std::io;
+// use std::os::unix::process::CommandExt;
 use std::process::{ExitStatus, Stdio};
 use std::sync::Arc;
 
@@ -8,6 +9,7 @@ use tokio::sync::{oneshot, Mutex};
 
 use crate::log::LogWriter;
 use crate::record::RecordType;
+use crate::resource::ResourceController;
 
 /// [`Supervisor`] represents a running process plus some tasks reading its output and writing
 /// it to a [`Log`].
@@ -40,6 +42,7 @@ impl Supervisor {
         log: Arc<Mutex<L>>,
         stop_signal_receiver: oneshot::Receiver<()>,
         exit_status_sender: oneshot::Sender<ExitStatus>,
+        resource_controller: Box<dyn ResourceController>,
     ) -> io::Result<()> {
         let mut command = Command::new(self.executable.clone());
         command
@@ -48,6 +51,9 @@ impl Supervisor {
             .stdout(Stdio::piped())
             .stderr(Stdio::piped())
             .kill_on_drop(true);
+        unsafe {
+            command.pre_exec(move || resource_controller.setup());
+        }
         let mut child = command.spawn()?;
 
         async fn read_output<A: AsyncRead + Unpin, L: LogWriter>(
@@ -102,6 +108,7 @@ mod tests {
     use super::*;
     use crate::log::Log;
     use crate::record::Record;
+    use crate::NoOpController;
 
     #[tokio::test]
     async fn test_supervisor_output() {
@@ -117,8 +124,13 @@ mod tests {
 
         let (_stop_signal, stop_signal_receiver) = oneshot::channel();
         let (exit_status_sender, exit_status_receiver) = oneshot::channel();
-        s.monitor(Arc::clone(&log), stop_signal_receiver, exit_status_sender)
-            .unwrap();
+        s.monitor(
+            Arc::clone(&log),
+            stop_signal_receiver,
+            exit_status_sender,
+            Box::new(NoOpController {}),
+        )
+        .unwrap();
 
         let exit_status = exit_status_receiver.await.unwrap();
         assert_eq!(exit_status.code(), Some(1));
@@ -155,8 +167,13 @@ mod tests {
 
         let (stop_signal, stop_signal_receiver) = oneshot::channel();
         let (exit_status_sender, exit_status_receiver) = oneshot::channel();
-        s.monitor(Arc::clone(&log), stop_signal_receiver, exit_status_sender)
-            .unwrap();
+        s.monitor(
+            Arc::clone(&log),
+            stop_signal_receiver,
+            exit_status_sender,
+            Box::new(NoOpController {}),
+        )
+        .unwrap();
         stop_signal.send(()).unwrap();
         let exit_status = exit_status_receiver.await.unwrap();
         assert!(!exit_status.success());
@@ -169,7 +186,12 @@ mod tests {
         let (_stop_signal, stop_signal_receiver) = oneshot::channel();
         let (exit_status_sender, _exit_status_receiver) = oneshot::channel();
         assert!(s
-            .monitor(Arc::clone(&log), stop_signal_receiver, exit_status_sender)
+            .monitor(
+                Arc::clone(&log),
+                stop_signal_receiver,
+                exit_status_sender,
+                Box::new(NoOpController {})
+            )
             .is_err());
     }
 }
