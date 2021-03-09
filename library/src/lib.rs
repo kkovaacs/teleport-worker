@@ -10,5 +10,5 @@ mod supervisor;
 ///
 pub use log::Log;
 pub use record::{Record, RecordType};
-pub use resource::{NoOpController, ResourceController};
+pub use resource::{CGroupsController, NoOpController, ResourceController};
 pub use supervisor::Supervisor;

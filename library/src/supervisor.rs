@@ -42,7 +42,7 @@ impl Supervisor {
         log: Arc<Mutex<L>>,
         stop_signal_receiver: oneshot::Receiver<()>,
         exit_status_sender: oneshot::Sender<ExitStatus>,
-        resource_controller: Box<dyn ResourceController>,
+        resource_controller: Arc<dyn ResourceController>,
     ) -> io::Result<()> {
         let mut command = Command::new(self.executable.clone());
         command
@@ -52,9 +52,12 @@ impl Supervisor {
             .stderr(Stdio::piped())
             .kill_on_drop(true);
         unsafe {
+            let resource_controller = Arc::clone(&resource_controller);
             command.pre_exec(move || resource_controller.setup());
         }
         let mut child = command.spawn()?;
+        // unwrap() is safe here for a newly spawn()-ed child (not yet polled to completion)
+        let child_pid = child.id().unwrap();
 
         async fn read_output<A: AsyncRead + Unpin, L: LogWriter>(
             log: Arc<Mutex<L>>,
@@ -98,6 +101,7 @@ impl Supervisor {
             let _ = exit_status.map(|v| {
                 let _ = exit_status_sender.send(v);
             });
+            let _ = resource_controller.cleanup(child_pid).unwrap();
         });
         Ok(())
     }
@@ -128,7 +132,7 @@ mod tests {
             Arc::clone(&log),
             stop_signal_receiver,
             exit_status_sender,
-            Box::new(NoOpController {}),
+            Arc::new(NoOpController {}),
         )
         .unwrap();
 
@@ -171,7 +175,7 @@ mod tests {
             Arc::clone(&log),
             stop_signal_receiver,
             exit_status_sender,
-            Box::new(NoOpController {}),
+            Arc::new(NoOpController {}),
         )
         .unwrap();
         stop_signal.send(()).unwrap();
@@ -190,7 +194,7 @@ mod tests {
                 Arc::clone(&log),
                 stop_signal_receiver,
                 exit_status_sender,
-                Box::new(NoOpController {})
+                Arc::new(NoOpController {})
             )
             .is_err());
     }
