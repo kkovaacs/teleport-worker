@@ -22,8 +22,19 @@ A GitHub actions workflow is also present to make sure that tests are run and fo
 
 The prototype service executable uses a hardwired TLS configuration with the certificates and keys in the `data/pki` directory. This means that it is not expecting any arguments.
 
+The service makes use of Linux cgroups for resource control. Because of this it requires extra privileges to be able to create cgroups. Either a memory and cpu cgroup has to be created manually that are owned by the user running the service or the service should be run as root. To help with the later Docker can be used to run the service as root _in a separate container_.
+
+Building the Docker container and running the service (make sure the Docker daemon has IPv6 enabled: https://docs.docker.com/config/daemon/ipv6/):
+
 ```shell
-$ cargo run --bin service
+$ cargo clean && docker build -t teleport-worker .
+$ docker run -it -v /sys/fs/cgroup:/sys/fs/cgroup -P --rm teleport-worker
+```
+
+Or otherwise run the service with sudo:
+
+```shell
+$ sudo target/debug/service
 ```
 
 Setting the log level of the service is done via the RUST_LOG enviroment variable. For more details see the [env_logger documentation](https://docs.rs/env_logger/0.8.3/env_logger/).

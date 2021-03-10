@@ -6,8 +6,10 @@ use proto::{
 
 use anyhow::Result;
 use futures::Stream;
-use library::RecordType;
+use library::{RecordType, ResourceController};
+use std::io::Cursor;
 use std::pin::Pin;
+use std::sync::Arc;
 use tokio::sync::mpsc;
 use tonic::transport::{
     server::{Router, Unimplemented},
@@ -16,7 +18,6 @@ use tonic::transport::{
 use tonic::{Request, Response, Status};
 
 use self::jobs::JobKey;
-use std::io::Cursor;
 
 pub mod handler;
 mod identity;
@@ -26,6 +27,7 @@ type WorkerResult<T> = Result<Response<T>, Status>;
 
 pub struct Worker {
     handler: handler::Handler,
+    resource_controller: Arc<dyn ResourceController>,
 }
 
 /// This is the implementation of the GRPC service
@@ -45,8 +47,9 @@ impl proto::worker_server::Worker for Worker {
             .handler
             .start_job(
                 username,
-                &job_submission.executable,
-                &job_submission.arguments,
+                job_submission.executable.clone(),
+                job_submission.arguments.clone(),
+                Arc::clone(&self.resource_controller),
             )
             .await
         {
@@ -178,9 +181,10 @@ fn get_username_or_fail<T>(request: &Request<T>) -> Result<identity::Identity, S
 
 type Imp = Router<WorkerServer<Worker>, Unimplemented>;
 
-pub fn new(mut server: Server) -> Imp {
+pub fn new(mut server: Server, resource_controller: Arc<dyn ResourceController>) -> Imp {
     let worker = Worker {
         handler: handler::Handler::default(),
+        resource_controller,
     };
 
     server.add_service(WorkerServer::new(worker))
