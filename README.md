@@ -24,10 +24,10 @@ The prototype service executable uses a hardwired TLS configuration with the cer
 
 The service makes use of Linux cgroups for resource control. Because of this it requires extra privileges to be able to create cgroups. Either a memory and cpu cgroup has to be created manually that are owned by the user running the service or the service should be run as root. To help with the later Docker can be used to run the service as root _in a separate container_.
 
-Building the Docker container and running the service:
+Building the Docker container and running the service (make sure the Docker daemon has IPv6 enabled: https://docs.docker.com/config/daemon/ipv6/):
 
 ```shell
-$ docker build -t teleport-worker .
+$ cargo clean && docker build -t teleport-worker .
 $ docker run -it -v /sys/fs/cgroup:/sys/fs/cgroup -P --rm teleport-worker
 ```
 

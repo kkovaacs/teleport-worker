@@ -11,8 +11,8 @@ RUN cargo build
 FROM debian:latest
 
 COPY --from=builder /source/target/debug/service /usr/local/bin
-RUN apt-get update && apt-get -y install libssl1.1
+RUN apt-get update && apt-get -y install libssl1.1 dumb-init
 
 EXPOSE 10000
 
-CMD ["/usr/local/bin/service"]
+CMD ["/usr/bin/dumb-init", "/usr/local/bin/service"]
