@@ -7,7 +7,7 @@ async fn main() -> anyhow::Result<()> {
     env_logger::init();
 
     let server = imp::new_tls_server()?;
-    let addr = "[::1]:10000".parse().unwrap();
+    let addr = "[::]:10000".parse().unwrap();
     imp::new(server, Arc::new(library::CGroupsController {}))
         .serve(addr)
         .await
