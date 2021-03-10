@@ -1,4 +1,5 @@
 use std::io;
+// use std::os::unix::process::CommandExt;
 use std::process::{ExitStatus, Stdio};
 use std::sync::Arc;
 
@@ -8,6 +9,7 @@ use tokio::sync::{oneshot, Mutex};
 
 use crate::log::LogWriter;
 use crate::record::RecordType;
+use crate::resource::ResourceController;
 
 /// [`Supervisor`] represents a running process plus some tasks reading its output and writing
 /// it to a [`Log`].
@@ -23,10 +25,10 @@ pub struct Supervisor {
 pub const READ_CHUNK_SIZE: usize = 1024;
 
 impl Supervisor {
-    pub fn new(executable: &str, args: &[String]) -> io::Result<Self> {
+    pub fn new(executable: String, args: Vec<String>) -> io::Result<Self> {
         Ok(Supervisor {
-            executable: executable.to_owned(),
-            arguments: args.to_vec(),
+            executable: executable,
+            arguments: args,
         })
     }
 
@@ -40,6 +42,7 @@ impl Supervisor {
         log: Arc<Mutex<L>>,
         stop_signal_receiver: oneshot::Receiver<()>,
         exit_status_sender: oneshot::Sender<ExitStatus>,
+        resource_controller: Arc<dyn ResourceController>,
     ) -> io::Result<()> {
         let mut command = Command::new(self.executable.clone());
         command
@@ -48,7 +51,13 @@ impl Supervisor {
             .stdout(Stdio::piped())
             .stderr(Stdio::piped())
             .kill_on_drop(true);
+        unsafe {
+            let resource_controller = Arc::clone(&resource_controller);
+            command.pre_exec(move || resource_controller.setup());
+        }
         let mut child = command.spawn()?;
+        // unwrap() is safe here for a newly spawn()-ed child (not yet polled to completion)
+        let child_pid = child.id().unwrap();
 
         async fn read_output<A: AsyncRead + Unpin, L: LogWriter>(
             log: Arc<Mutex<L>>,
@@ -92,6 +101,7 @@ impl Supervisor {
             let _ = exit_status.map(|v| {
                 let _ = exit_status_sender.send(v);
             });
+            let _ = resource_controller.cleanup(child_pid).unwrap();
         });
         Ok(())
     }
@@ -102,13 +112,14 @@ mod tests {
     use super::*;
     use crate::log::Log;
     use crate::record::Record;
+    use crate::NoOpController;
 
     #[tokio::test]
     async fn test_supervisor_output() {
         let log = Arc::new(Mutex::new(Log::new().unwrap()));
         let s = Supervisor::new(
-            "/bin/sh",
-            &[
+            "/bin/sh".to_owned(),
+            vec![
                 "-c".to_string(),
                 "echo stdout; echo stderr 1>&2; exit 1".to_string(),
             ],
@@ -117,8 +128,13 @@ mod tests {
 
         let (_stop_signal, stop_signal_receiver) = oneshot::channel();
         let (exit_status_sender, exit_status_receiver) = oneshot::channel();
-        s.monitor(Arc::clone(&log), stop_signal_receiver, exit_status_sender)
-            .unwrap();
+        s.monitor(
+            Arc::clone(&log),
+            stop_signal_receiver,
+            exit_status_sender,
+            Arc::new(NoOpController {}),
+        )
+        .unwrap();
 
         let exit_status = exit_status_receiver.await.unwrap();
         assert_eq!(exit_status.code(), Some(1));
@@ -151,12 +167,17 @@ mod tests {
     #[tokio::test]
     async fn test_stop_signal() {
         let log = Arc::new(Mutex::new(Log::new().unwrap()));
-        let s = Supervisor::new("/bin/sleep", &["100".to_string()]).unwrap();
+        let s = Supervisor::new("/bin/sleep".to_owned(), vec!["100".to_string()]).unwrap();
 
         let (stop_signal, stop_signal_receiver) = oneshot::channel();
         let (exit_status_sender, exit_status_receiver) = oneshot::channel();
-        s.monitor(Arc::clone(&log), stop_signal_receiver, exit_status_sender)
-            .unwrap();
+        s.monitor(
+            Arc::clone(&log),
+            stop_signal_receiver,
+            exit_status_sender,
+            Arc::new(NoOpController {}),
+        )
+        .unwrap();
         stop_signal.send(()).unwrap();
         let exit_status = exit_status_receiver.await.unwrap();
         assert!(!exit_status.success());
@@ -165,11 +186,16 @@ mod tests {
     #[tokio::test]
     async fn test_invalid_executable() {
         let log = Arc::new(Mutex::new(Log::new().unwrap()));
-        let s = Supervisor::new("/bin/nonexistent", &[]).unwrap();
+        let s = Supervisor::new("/bin/nonexistent".to_owned(), vec![]).unwrap();
         let (_stop_signal, stop_signal_receiver) = oneshot::channel();
         let (exit_status_sender, _exit_status_receiver) = oneshot::channel();
         assert!(s
-            .monitor(Arc::clone(&log), stop_signal_receiver, exit_status_sender)
+            .monitor(
+                Arc::clone(&log),
+                stop_signal_receiver,
+                exit_status_sender,
+                Arc::new(NoOpController {})
+            )
             .is_err());
     }
 }

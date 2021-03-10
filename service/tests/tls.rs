@@ -1,6 +1,7 @@
 use futures::FutureExt;
 use proto::{worker_client::WorkerClient, JobId};
 use service::imp;
+use std::sync::Arc;
 use std::time::Duration;
 use tokio::sync::oneshot;
 use tonic::transport::{Certificate, ClientTlsConfig, Endpoint, Identity};
@@ -14,10 +15,13 @@ async fn test_tls_auth_succeeds() -> () {
     // could bind to port zero and query the actual port later...
     let addr = "127.0.0.1:12342".parse().unwrap();
     let service_handle = tokio::spawn(async move {
-        imp::new(imp::new_tls_server().unwrap())
-            .serve_with_shutdown(addr, rx.map(drop))
-            .await
-            .unwrap();
+        imp::new(
+            imp::new_tls_server().unwrap(),
+            Arc::new(library::NoOpController {}),
+        )
+        .serve_with_shutdown(addr, rx.map(drop))
+        .await
+        .unwrap();
     });
 
     let server_ca_cert = include_bytes!("../../data/pki/server-ca-cert.pem");
@@ -64,10 +68,13 @@ async fn test_tls_auth_fails() -> () {
     // could bind to port zero and query the actual port later...
     let addr = "127.0.0.1:12343".parse().unwrap();
     let service_handle = tokio::spawn(async move {
-        imp::new(imp::new_tls_server().unwrap())
-            .serve_with_shutdown(addr, rx.map(drop))
-            .await
-            .unwrap();
+        imp::new(
+            imp::new_tls_server().unwrap(),
+            Arc::new(library::NoOpController {}),
+        )
+        .serve_with_shutdown(addr, rx.map(drop))
+        .await
+        .unwrap();
     });
 
     let server_ca_cert = include_bytes!("../../data/pki/server-ca-cert.pem");

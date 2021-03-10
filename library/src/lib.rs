@@ -1,6 +1,7 @@
 mod log;
 mod log_reader;
 mod record;
+mod resource;
 mod supervisor;
 
 ///
@@ -9,4 +10,5 @@ mod supervisor;
 ///
 pub use log::Log;
 pub use record::{Record, RecordType};
+pub use resource::{CGroupsController, NoOpController, ResourceController};
 pub use supervisor::Supervisor;

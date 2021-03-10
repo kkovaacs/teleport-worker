@@ -6,6 +6,7 @@ use proto::{
 use service::imp;
 
 use futures::FutureExt;
+use std::sync::Arc;
 use std::time::Duration;
 use tokio::sync::oneshot;
 use tonic::{
@@ -21,10 +22,13 @@ async fn test_job_submission() -> () {
     // could bind to port zero and query the actual port later...
     let addr = "127.0.0.1:12342".parse().unwrap();
     let service_handle = tokio::spawn(async move {
-        imp::new(imp::new_tls_server().unwrap())
-            .serve_with_shutdown(addr, rx.map(drop))
-            .await
-            .unwrap();
+        imp::new(
+            imp::new_tls_server().unwrap(),
+            Arc::new(library::NoOpController {}),
+        )
+        .serve_with_shutdown(addr, rx.map(drop))
+        .await
+        .unwrap();
     });
 
     let server_ca_cert = include_bytes!("../../data/pki/server-ca-cert.pem");
@@ -142,10 +146,13 @@ async fn test_authorization() -> () {
     // could bind to port zero and query the actual port later...
     let addr = "127.0.0.1:12343".parse().unwrap();
     let service_handle = tokio::spawn(async move {
-        imp::new(imp::new_tls_server().unwrap())
-            .serve_with_shutdown(addr, rx.map(drop))
-            .await
-            .unwrap();
+        imp::new(
+            imp::new_tls_server().unwrap(),
+            Arc::new(library::NoOpController {}),
+        )
+        .serve_with_shutdown(addr, rx.map(drop))
+        .await
+        .unwrap();
     });
 
     let server_ca_cert = include_bytes!("../../data/pki/server-ca-cert.pem");
