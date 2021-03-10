@@ -7,7 +7,12 @@ use std::process::ExitStatus;
 use std::sync::Arc;
 use tokio::sync::{mpsc, oneshot, Mutex};
 
-pub type Jobs = HashMap<JobId, Job>;
+use super::identity;
+
+pub type Jobs = HashMap<JobKey, Job>;
+
+#[derive(Clone, PartialEq, Eq, Hash)]
+pub struct JobKey(pub identity::Identity, pub JobId);
 
 /// A unique job identifier -- now just a UUID
 #[derive(Clone, Copy, PartialEq, Eq, Hash)]
@@ -134,7 +139,7 @@ impl Job {
         }
     }
 
-    fn update_status(&mut self) -> () {
+    fn update_status(&mut self) {
         let new_state = match &mut self.state {
             JobState::Running {
                 stop_signal: _,

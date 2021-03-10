@@ -1,7 +1,8 @@
 use anyhow::Result;
 use tokio::sync::{mpsc, Mutex};
 
-use crate::imp::jobs::{Job, JobId, Jobs, Status};
+use crate::imp::identity::Identity;
+use crate::imp::jobs::{Job, JobId, JobKey, Jobs, Status};
 use library::Record;
 
 /// Implements the actual operations and stores service state (jobs)
@@ -13,33 +14,38 @@ pub struct Handler {
 }
 
 impl Handler {
-    pub async fn start_job(&self, executable: &str, arguments: &[String]) -> Result<JobId> {
+    pub async fn start_job(
+        &self,
+        owner: Identity,
+        executable: &str,
+        arguments: &[String],
+    ) -> Result<JobId> {
         let (job_id, mut job) = Job::new(executable, arguments)?;
         job.start().await?;
-        self.jobs.lock().await.insert(job_id, job);
+        self.jobs.lock().await.insert(JobKey(owner, job_id), job);
         Ok(job_id)
     }
 
-    pub async fn stop_job(&self, job_id: &JobId) -> Result<()> {
-        let job = self.jobs.lock().await.remove(job_id);
+    pub async fn stop_job(&self, job_key: &JobKey) -> Result<()> {
+        let job = self.jobs.lock().await.remove(job_key);
         match job {
             Some(mut job) => job.stop(),
             None => Err(anyhow::anyhow!("no such job id")),
         }
     }
 
-    pub async fn query_status(&self, job_id: &JobId) -> Result<Status> {
+    pub async fn query_status(&self, job_key: &JobKey) -> Result<Status> {
         let mut jobs = self.jobs.lock().await;
-        let job = jobs.get_mut(job_id);
+        let job = jobs.get_mut(job_key);
         match job {
             Some(job) => Ok(job.status()),
             None => Err(anyhow::anyhow!("no such job id")),
         }
     }
 
-    pub async fn fetch_output(&self, job_id: &JobId) -> Result<mpsc::Receiver<Record>> {
+    pub async fn fetch_output(&self, job_key: &JobKey) -> Result<mpsc::Receiver<Record>> {
         let mut jobs = self.jobs.lock().await;
-        let job = jobs.get_mut(job_id);
+        let job = jobs.get_mut(job_key);
         match job {
             Some(job) => {
                 let record_receiver = job.fetch_output().await?;
